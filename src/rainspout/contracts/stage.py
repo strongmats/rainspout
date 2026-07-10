@@ -7,7 +7,7 @@ class-definition time, naming the class.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any, ClassVar
 
 from pydantic import ValidationError
@@ -84,6 +84,8 @@ class Stage(metaclass=_enforcement.ContractMeta):
         self._status: str = ""
         self._progress: float | None = None
         self._warnings: list[str] = []
+        # attached by the runner while run() executes; feeds `spout status`
+        self._report_hook: Callable[[str, float | None], None] | None = None
 
     # -- the author's surface -------------------------------------------------
 
@@ -111,6 +113,8 @@ class Stage(metaclass=_enforcement.ContractMeta):
     def set_status(self, status: str) -> None:
         """Update the status line. Mandatory at least once per run(). Cheap."""
         self._status = str(status)
+        if self._report_hook is not None:
+            self._report_hook(self._status, self._progress)
 
     def set_progress(self, fraction: float) -> None:
         """Record progress; must lie in [0, 1]."""
@@ -118,6 +122,8 @@ class Stage(metaclass=_enforcement.ContractMeta):
         if not 0.0 <= value <= 1.0:
             raise StageError(f"progress must be within [0, 1], got {fraction!r}")
         self._progress = value
+        if self._report_hook is not None:
+            self._report_hook(self._status, self._progress)
 
     def add_warning(self, message: str) -> None:
         """Record that output is valid but something is worth noting."""

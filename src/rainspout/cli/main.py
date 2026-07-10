@@ -10,16 +10,28 @@ from __future__ import annotations
 import signal
 import subprocess
 import sys
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
 import typer
 
 from .. import conformance, discovery, registry, validation
-from ..driver import Plan, StopFlag, drive, new_run_id, parse_selects, resolve_oplog_path
+from ..config import load_config
+from ..driver import (
+    Plan,
+    StopFlag,
+    acquire_run_lock,
+    drive,
+    new_run_id,
+    parse_selects,
+    resolve_oplog_path,
+)
 from ..errors import RainspoutError
 from ..oplog import OpLog
 from ..runner import WorkItemResult
+from ..status import StatusReporter, read_status, resolve_status_path
 from ._mount import mount_package_verbs
 from .build_image import generate_dockerfile
 
@@ -109,30 +121,96 @@ def run(
         discovery.discover_components()
         validated = validation.validate_config(config)
         selected = parse_selects(select or [], validated)
-        oplog = OpLog(resolve_oplog_path(config, validated.config))
-        run_id = new_run_id(validated.config.run.name)
+        oplog_path = resolve_oplog_path(config, validated.config)
+        oplog = OpLog(oplog_path)
+        run_name = validated.config.run.name
+        run_id = new_run_id(run_name)
+
+        # one active run per run definition; dry runs only read, so no lock
+        release_lock: Callable[[], None] | None = None
+        reporter: StatusReporter | None = None
+        if not dry_run:
+            release_lock = acquire_run_lock(oplog_path, run_name=run_name, run_id=run_id)
+            reporter = StatusReporter(
+                resolve_status_path(oplog_path, validated.config),
+                run_name=run_name, run_id=run_id, mode=validated.config.run.mode,
+            )
 
         stop = StopFlag()
         signal.signal(signal.SIGINT, stop.set)
         signal.signal(signal.SIGTERM, stop.set)
 
-        summary = drive(
-            validated,
-            oplog=oplog,
-            run_id=run_id,
-            select=selected,
-            retry_failed=retry_failed,
-            force_rewrite=force_rewrite,
-            dry_run=dry_run,
-            notify=_echo_event,
-            stop=stop,
-        )
+        try:
+            summary = drive(
+                validated,
+                oplog=oplog,
+                run_id=run_id,
+                select=selected,
+                retry_failed=retry_failed,
+                force_rewrite=force_rewrite,
+                dry_run=dry_run,
+                notify=_echo_event,
+                stop=stop,
+                reporter=reporter,
+            )
+        finally:
+            if release_lock is not None:
+                release_lock()
     except RainspoutError as exc:
         typer.echo(f"run failed to start: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     if not summary.dry_run:
         suffix = " (stopped cleanly)" if summary.stopped else ""
         typer.echo(f"done: {summary.succeeded} succeeded, {summary.failed} failed{suffix}")
+
+
+def _age(seconds: float) -> str:
+    if seconds < 90:
+        return f"{int(seconds)}s"
+    if seconds < 5400:
+        return f"{int(seconds // 60)}m"
+    return f"{seconds / 3600:.1f}h"
+
+
+@app.command()
+def status(
+    config: Annotated[
+        Path, typer.Option("--config", help="Path to the run configuration (.yml)")
+    ],
+) -> None:
+    """Show a run's status — readable from another terminal while it runs.
+
+    Reads the status file the running process publishes next to its
+    operational log; needs no component imports and touches no data.
+    """
+    try:
+        cfg = load_config(config)
+        path = resolve_status_path(resolve_oplog_path(config, cfg), cfg)
+        if not path.exists():
+            typer.echo(
+                f"no status recorded for run '{cfg.run.name}' (expected at {path}) — "
+                "this run definition has not executed yet, or last ran under an "
+                "older rainspout",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        doc = read_status(path)
+    except RainspoutError as exc:
+        typer.echo(f"status failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    age = max(0.0, (datetime.now(UTC) - doc.updated_at).total_seconds())
+    typer.echo(f"run '{doc.run_name}' — {doc.state} (updated {_age(age)} ago)")
+    typer.echo(f"  run_id {doc.run_id}, pid {doc.pid}, mode {doc.mode}, cycle {doc.cycle}")
+    if doc.plan is not None:
+        typer.echo(
+            f"  plan: {doc.plan.to_run} to run, {doc.plan.done} done, "
+            f"{doc.plan.failed} previously failed ({doc.plan.missing} missing)"
+        )
+    typer.echo(f"  this run: {doc.succeeded} succeeded, {doc.failed} failed")
+    if doc.current is not None:
+        line = f" — {doc.current.status_line}" if doc.current.status_line else ""
+        pct = f" [{doc.current.progress:.0%}]" if doc.current.progress is not None else ""
+        typer.echo(f"  now: [{doc.current.cell_id}] {doc.current.stage}{line}{pct}")
 
 
 @app.command()

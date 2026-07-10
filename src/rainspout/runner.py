@@ -18,6 +18,7 @@ from typing import Any, Literal
 from .contracts import LazyReference, Meta, ProvenanceEntry, Stage
 from .oplog import OpLog, StageRecord, WorkItemRecord
 from .provenance import provenance_entry
+from .status import StatusReporter, make_stage_hook
 from .validation import ValidatedRun
 
 
@@ -61,6 +62,7 @@ def run_work_item(
     *,
     run_id: str,
     oplog: OpLog,
+    reporter: StatusReporter | None = None,
 ) -> WorkItemResult:
     """Execute the whole stage chain for one point in the dimension space."""
     config = validated.config
@@ -104,6 +106,9 @@ def run_work_item(
                 field_values[field_name] = validated.handler_instances[wiring.handler]
         deps = type(stage).dependencies_model(**field_values)
 
+        if reporter is not None:
+            reporter.stage_started(cid, instance_name)
+            stage._report_hook = make_stage_hook(reporter)
         try:
             output = stage.run(deps)
             chain.append(provenance_entry(stage, warnings=_fresh_warnings(stage, warning_offset)))
@@ -146,6 +151,8 @@ def run_work_item(
                 cell_id=cid, coords=coords, status="failed",
                 stages=tuple(outcomes), failed_stage=instance_name,
             )
+        finally:
+            stage._report_hook = None
 
         warnings = _fresh_warnings(stage, warning_offset)
         outcomes.append(
