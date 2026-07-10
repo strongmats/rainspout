@@ -1,5 +1,10 @@
 # Rainspout
 
+[![PyPI](https://img.shields.io/pypi/v/rainspout)](https://pypi.org/project/rainspout/)
+[![Python](https://img.shields.io/pypi/pyversions/rainspout)](https://pypi.org/project/rainspout/)
+[![CI](https://github.com/strongmats/rainspout/actions/workflows/ci.yml/badge.svg)](https://github.com/strongmats/rainspout/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A domain-agnostic frame for building scientific data-processing pipelines.
 Rainspout contains no science of its own: content packages ship the stages
 (processing steps) and handlers (storage adapters); one YAML config describes
