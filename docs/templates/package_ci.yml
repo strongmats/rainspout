@@ -1,0 +1,31 @@
+# The skeleton's CI template for content packages (PACKAGE_AUTHORING §7).
+# Copy to .github/workflows/ci.yml in your package repository.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history: the version-bump check diffs against main
+      - uses: astral-sh/setup-uv@v5
+      - name: Sync environment
+        run: uv sync
+      - name: Lint
+        run: uv run ruff check .
+      - name: Type-check
+        run: uv run mypy src
+      - name: Conformance + full test suite
+        # the same thing `spout test-package <your_package>` runs on demand
+        run: uv run spout test-package YOUR_PACKAGE_IMPORT_NAME
+      - name: Coverage floor
+        run: uv run pytest --cov=YOUR_PACKAGE_IMPORT_NAME --cov-fail-under=90
+      - name: Stage version-bump check
+        if: github.event_name == 'pull_request'
+        run: uv run python -m rainspout.devtools.version_bump --base origin/${{ github.base_ref }}
