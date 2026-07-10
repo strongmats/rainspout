@@ -30,9 +30,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/strongmats/rainpipe"
-Documentation = "https://github.com/strongmats/rainpipe/tree/main/docs"
-Issues = "https://github.com/strongmats/rainpipe/issues"
+Homepage = "https://github.com/strongmats/rainspout"
+Documentation = "https://github.com/strongmats/rainspout/tree/main/docs"
+Issues = "https://github.com/strongmats/rainspout/issues"
 
 [project.scripts]
 spout = "rainspout.cli.main:app"

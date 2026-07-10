@@ -408,7 +408,7 @@ Content-package territory: h5py/scipy, ONNX Runtime, Docker (`build-image` targe
     independent agent chosen by the project owner to avoid biasing; a
     docs-only build of a conforming package succeeded). The gated build is
     complete. Released under the MIT license; published to PyPI as
-    `rainspout` from github.com/strongmats/rainpipe (tag-driven trusted
+    `rainspout` from github.com/strongmats/rainspout (tag-driven trusted
     publishing).
 
 ---
