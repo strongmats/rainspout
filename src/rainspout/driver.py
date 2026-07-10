@@ -17,6 +17,7 @@ history it is supposed to subtract.
 
 from __future__ import annotations
 
+import os
 import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping
@@ -30,6 +31,7 @@ from .config import RootConfig
 from .errors import ConfigError
 from .oplog import OpLog
 from .runner import WorkItemResult, cell_id, prepare_stages, run_work_item
+from .status import StatusReporter
 from .validation import ValidatedRun
 
 Notify = Callable[[str, Any], None]
@@ -89,6 +91,43 @@ def resolve_oplog_path(config_path: Path, config: RootConfig) -> Path:
         path = Path(declared)
         return path if path.is_absolute() else base / path
     return base / ".rainspout" / f"{config.run.name}.oplog.jsonl"
+
+
+def acquire_run_lock(oplog_path: Path, *, run_name: str, run_id: str) -> Callable[[], None]:
+    """Take the exclusive lock for this run definition, or fail naming the holder.
+
+    One run definition (config location + run.name) = one operational log =
+    at most ONE active run: two concurrent runs would each drain the same
+    delta, double-processing every cell and interleaving both logs. The lock
+    file lives next to the oplog and is held for the run's duration; the OS
+    releases it automatically if the process dies, so there are no stale
+    locks. Returns the release callable.
+
+    On platforms without ``fcntl`` (Windows) the lock is not enforced.
+    """
+    lock_path = oplog_path.parent / f"{run_name}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(lock_path, "a+")  # noqa: SIM115 — held for the run's duration; close = unlock
+    try:
+        import fcntl
+    except ImportError:  # pragma: no cover — non-POSIX platform: unenforced
+        return handle.close
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.seek(0)
+        holder = handle.read().strip() or "holder unknown"
+        handle.close()
+        raise ConfigError(
+            f"run '{run_name}' is already active ({holder}) — one active run per run "
+            f"definition; wait for it, stop it, or use a different run.name "
+            f"(lock: {lock_path})"
+        ) from None
+    handle.truncate(0)
+    handle.seek(0)
+    handle.write(f"pid {os.getpid()}, run_id {run_id}\n")
+    handle.flush()
+    return handle.close  # closing the descriptor releases the lock
 
 
 def parse_selects(pairs: Iterable[str], validated: ValidatedRun) -> dict[str, set[str]]:
@@ -239,6 +278,7 @@ def drive(
     notify: Notify | None = None,
     stop: StopFlag | None = None,
     max_cycles: int | None = None,
+    reporter: StatusReporter | None = None,
 ) -> RunSummary:
     """Execute (or plan) the run. Retrograde: one cycle. Realtime: cycles forever."""
     notify = notify or _silent
@@ -272,25 +312,38 @@ def drive(
             force_rewrite=force_rewrite and cycles == 1,
         )
         notify("plan", plan)
+        if reporter is not None:
+            reporter.plan(
+                cycle=cycles, to_run=len(plan.items), done=plan.done,
+                failed=plan.failed, missing=plan.missing,
+            )
         for coords in plan.items:
             if stop:
                 break
-            result = run_work_item(validated, coords, run_id=run_id, oplog=oplog)
+            result = run_work_item(
+                validated, coords, run_id=run_id, oplog=oplog, reporter=reporter
+            )
             results.append(result)
             if result.status == "succeeded":
                 succeeded += 1
             else:
                 failed += 1
+            if reporter is not None:
+                reporter.item_finished(result.status)
             notify("work_item", result)
         if not realtime or stop:
             break
         if max_cycles is not None and cycles >= max_cycles:
             break
         notify("cycle_end", cycles)
+        if reporter is not None:
+            reporter.polling(cycles)
         _sleep(float(validated.config.run.poll_frequency or 0), stop)
         if stop:
             break
 
+    if reporter is not None:
+        reporter.finished(stopped=bool(stop))
     return RunSummary(
         run_id=run_id, succeeded=succeeded, failed=failed, cycles=cycles,
         stopped=bool(stop), dry_run=False, results=tuple(results),

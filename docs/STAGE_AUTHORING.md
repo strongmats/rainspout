@@ -362,6 +362,14 @@ through a named handler. Never write output to disk yourself.
   complete in `[0, 1]`, or `None` where a total genuinely can't be known
   (streaming). Implement it whenever a total exists; keep it cheap. The default
   `progress()` returns `None`; update via `self.set_progress(x)` as you go.
+- **These calls are live.** While a run executes, every `set_status` /
+  `set_progress` updates the run's status file, and anyone can watch from
+  another terminal with `spout status --config <run.yml>` — your status line
+  and percentage appear there in real time. A stage that reports as it goes
+  (say, every chunk of a long loop) is a stage an operator can watch; one
+  that never calls them mid-run just shows as running with a stale age.
+  Final status lines also land in the operational log, per stage, per work
+  item, for successes and failures alike.
 - `self.add_warning(str)` — the stage completed and its output is **valid**,
   but something is worth recording (fell back to a default, clipped outliers).
   Warnings land in the operational log and in provenance; a warned work item
