@@ -31,5 +31,13 @@ def discover_components() -> tuple[str, ...]:
             raise DefinitionError(
                 f"while loading components from entry point {ep.name!r} ({ep.value}): {exc}"
             ) from exc
+        except Exception as exc:
+            # a broken installed package (moved source, bad import) must not
+            # crash every command with a raw traceback — name the offender
+            raise DefinitionError(
+                f"entry point {ep.name!r} ({ep.value}) failed to load: "
+                f"{type(exc).__name__}: {exc} — the package providing it is broken "
+                "or its source is missing; re-install or uninstall that package"
+            ) from exc
         loaded.append(ep.name)
     return tuple(loaded)

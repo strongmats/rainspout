@@ -9,6 +9,13 @@ a run; the `spout` command executes it, tracking what has already been done.
 API: you can build a content package from the authoring guides alone, without
 reading this repository's source.
 
+## Installation
+
+```
+pip install rainspout      # or: uv add rainspout
+spout --help
+```
+
 ## Development
 
 ```

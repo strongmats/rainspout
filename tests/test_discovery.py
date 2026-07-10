@@ -48,3 +48,16 @@ def test_registration_failure_names_the_package(monkeypatch):
     fake_metadata(monkeypatch, [FakeEntryPoint("bad_pkg", explode)])
     with pytest.raises(DefinitionError, match="bad_pkg.*duplicate handler name 'x'"):
         discovery.discover_components()
+
+
+def test_broken_package_import_names_the_entry_point(monkeypatch):
+    # a stale editable install (source moved/deleted) raises ImportError at
+    # load — it must surface as a named offender, not a raw traceback
+    def explode():
+        raise ModuleNotFoundError("No module named 'ghost_pkg'")
+
+    fake_metadata(monkeypatch, [FakeEntryPoint("ghost_pkg", explode)])
+    with pytest.raises(
+        DefinitionError, match="'ghost_pkg'.*failed to load.*ModuleNotFoundError.*re-install"
+    ):
+        discovery.discover_components()

@@ -7,12 +7,32 @@ name = "rainspout"
 version = "1.0.0"
 description = "A domain-agnostic frame for building scientific data-processing pipelines"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Matthew Strong", email = "strongmats@gmail.com" }]
 requires-python = ">=3.11"
+keywords = ["pipeline", "scientific-computing", "data-processing", "provenance", "workflow"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
+]
 dependencies = [
     "pydantic>=2,<3",
     "pyyaml>=6",
     "typer>=0.12",
 ]
+
+[project.urls]
+Homepage = "https://github.com/strongmats/rainpipe"
+Documentation = "https://github.com/strongmats/rainpipe/tree/main/docs"
+Issues = "https://github.com/strongmats/rainpipe/issues"
 
 [project.scripts]
 spout = "rainspout.cli.main:app"
