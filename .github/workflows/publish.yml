@@ -4,7 +4,7 @@ name: publish
 # checks the tag matches the package version, builds sdist + wheel, and
 # publishes to PyPI via trusted publishing (OIDC — no long-lived token).
 # One-time setup on pypi.org: add this repo as a trusted publisher for the
-# `rainspout` project (owner: strongmats, repo: rainpipe,
+# `rainspout` project (owner: strongmats, repo: rainspout,
 # workflow: publish.yml, environment: pypi).
 
 on:
