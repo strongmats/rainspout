@@ -76,15 +76,14 @@ the history it must subtract. To put it elsewhere, set `oplog:` (a relative
 path resolves against this config file's directory). Renaming `run.name`
 starts a fresh history by design.
 
-Two siblings live next to the log, both keyed to the same run identity
-(config location + `run.name`): a **status file** (`<name>.status.json`)
-that the running process keeps updated — read it from another terminal with
-`spout status --config <run.yml>` — and a **lock file** that admits **one
-active run per run definition**: a second `spout run` on the same config
-fails at startup naming the process already holding it (two concurrent runs
-would drain the same delta twice). Run the same pipeline concurrently by
-giving each run its own `run.name` (which is its own history) — never by
-racing one name.
+A sibling lives next to the log, keyed to the same run identity (config
+location + `run.name`): a **lock file** that admits **one active run per
+run definition** — a second `spout run` on the same config fails at startup
+naming the process already holding it (two concurrent runs would drain the
+same delta twice). Run the same pipeline concurrently by giving each run
+its own `run.name` (which is its own history) — never by racing one name.
+(Live progress needs no file at all: `spout run` redraws a one-line status
+in its own terminal; see `--live/--no-live`.)
 
 - **retrograde** — compute the work delta once and drain it, then exit.
 - **realtime** — drain the delta, sleep `poll_frequency` seconds, recompute,

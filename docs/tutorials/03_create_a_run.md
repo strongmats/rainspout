@@ -177,18 +177,18 @@ up on the next poll. Ctrl-C between work items stops cleanly — the summary
 line ends `(stopped cleanly)` — and already-processed
 cells are never re-done.
 
-While it runs, watch it from **another terminal**:
+While it runs, a **live status line** at the bottom of the terminal redraws
+itself in place:
 
 ```
-$ spout status --config smooth_live.yml
-run 'smooth_live' — polling (updated 12s ago)
-  run_id smooth_live-…, pid …, mode realtime, cycle 3
-  plan: 0 to run, 6 done, 0 previously failed (0 missing)
-  this run: 6 succeeded, 0 failed
+2/6 · [day=2026-01-02|sensor=s2] smooth — smoothing chunk 3/5 60%
 ```
 
-(While a stage executes, a `now:` line shows its cell, status line, and — if
-the stage calls `set_progress` — a live percentage.) And if you start a
+It shows items done this cycle, the current work item, and — if the stage
+calls `set_status`/`set_progress` — its live status line and percentage,
+then `cycle N drained — polling…` between polls. The line is on by default
+when you're at a terminal and off when output is redirected (logs stay
+clean); force it either way with `--live/--no-live`. And if you start a
 second `spout run` on the same config while the first is alive, it refuses
 with `run 'smooth_live' is already active (pid …)` — one active run per run
 definition; concurrency means giving each run its own `run.name`.

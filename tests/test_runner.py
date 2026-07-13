@@ -268,6 +268,96 @@ def test_handler_dependency_injected(tmp_path):
     assert result.status == "succeeded"
 
 
+def test_outputs_released_after_last_consumer(tmp_path):
+    # memory contract: an intermediate output is freed as soon as its last
+    # `from:` consumer has run — not held for the whole work item. A stage
+    # downstream of the release point observes the weakref dying; the
+    # terminal save still carries the full provenance chain even though the
+    # seed cell's data was freed (its Meta is retained).
+    import gc
+    import weakref
+
+    from rainspout.contracts import LazyReference as LR
+    from rainspout.contracts import Stage, StageDependencies, StageSettings
+
+    probe = {}
+
+    class ChainDeps(StageDependencies):
+        data: LR
+
+    class ChainSettings(StageSettings):
+        pass
+
+    class Payload(list):
+        pass  # plain lists reject weakrefs; a subclass carries __weakref__
+
+    class RunBox(Stage):
+        name = "run_box"
+        version = "1.0.0"
+        settings_model = ChainSettings
+        dependencies_model = ChainDeps
+
+        def run(self, deps):
+            out = Payload(deps.data.get())
+            probe["boxed"] = weakref.ref(out)
+            self.set_status("boxed")
+            return out
+
+    class RunRelay(Stage):
+        name = "run_relay"
+        version = "1.0.0"
+        settings_model = ChainSettings
+        dependencies_model = ChainDeps
+
+        def run(self, deps):
+            self.set_status("relayed")
+            return list(deps.data.get())
+
+    class RunObserve(Stage):
+        name = "run_observe"
+        version = "1.0.0"
+        settings_model = ChainSettings
+        dependencies_model = ChainDeps
+
+        def run(self, deps):
+            gc.collect()
+            probe["boxed_alive_downstream"] = probe["boxed"]() is not None
+            self.set_status("observed")
+            return list(deps.data.get())
+
+    def chain3(cfg):
+        cfg["stages"] = {
+            "box": {
+                "stage": "run_box",
+                "dependencies": {"data": {"from": "raw"}},
+                "settings": {},
+            },
+            "relay": {  # the LAST consumer of box's output
+                "stage": "run_relay",
+                "dependencies": {"data": {"from": "box"}},
+                "settings": {},
+            },
+            "observe": {
+                "stage": "run_observe",
+                "dependencies": {"data": {"from": "relay"}},
+                "settings": {},
+                "save": {"handler": "out2"},
+            },
+        }
+
+    validated, oplog, _ = make_run(tmp_path, chain3)
+    result = run_work_item(validated, COORDS, run_id="run-1", oplog=oplog)
+    assert result.status == "succeeded"
+    # box's output was freed before observe ran (relay was its last consumer)
+    assert probe["boxed_alive_downstream"] is False
+    gc.collect()
+    assert probe["boxed"]() is None
+    # the terminal save still assembled the full chain after the seed's data
+    # was released (base_meta reads the retained Meta, not the data)
+    _, meta = RtReadingsCsv({"base_dir": str(tmp_path / "out") + "_2"}).load_one(COORDS)
+    assert [e.stage_name for e in meta.provenance] == ["run_box", "run_relay", "run_observe"]
+
+
 def test_settings_error_message_unaffected_by_runner(tmp_path):
     # sanity: nothing in the runner path weakens validation-time guarantees
     with pytest.raises(Exception, match="factor"):

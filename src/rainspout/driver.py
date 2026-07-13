@@ -31,7 +31,7 @@ from .config import RootConfig
 from .errors import ConfigError
 from .oplog import OpLog
 from .runner import WorkItemResult, cell_id, prepare_stages, run_work_item
-from .status import StatusReporter
+from .status import LiveStatus
 from .validation import ValidatedRun
 
 Notify = Callable[[str, Any], None]
@@ -278,7 +278,7 @@ def drive(
     notify: Notify | None = None,
     stop: StopFlag | None = None,
     max_cycles: int | None = None,
-    reporter: StatusReporter | None = None,
+    reporter: LiveStatus | None = None,
 ) -> RunSummary:
     """Execute (or plan) the run. Retrograde: one cycle. Realtime: cycles forever."""
     notify = notify or _silent
