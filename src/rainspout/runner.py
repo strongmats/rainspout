@@ -18,7 +18,7 @@ from typing import Any, Literal
 from .contracts import LazyReference, Meta, ProvenanceEntry, Stage
 from .oplog import OpLog, StageRecord, WorkItemRecord
 from .provenance import provenance_entry
-from .status import StatusReporter, make_stage_hook
+from .status import LiveStatus, make_stage_hook
 from .validation import ValidatedRun
 
 
@@ -62,7 +62,7 @@ def run_work_item(
     *,
     run_id: str,
     oplog: OpLog,
-    reporter: StatusReporter | None = None,
+    reporter: LiveStatus | None = None,
 ) -> WorkItemResult:
     """Execute the whole stage chain for one point in the dimension space."""
     config = validated.config
@@ -89,10 +89,19 @@ def run_work_item(
         validated.seed_name: LazyReference(lambda: seed_cell()[0], coords=coords)
     }
 
+    # Eager release: an output is dead once its last `from:` consumer has run.
+    # Retaining every output for the whole work item multiplies peak memory by
+    # the chain depth, which matters when cells are gigabytes.
+    last_consumer: dict[str, int] = {}
+    for consumer_index, name in enumerate(validated.stage_order):
+        for wiring in config.stages[name].dependencies.values():
+            if wiring.from_ is not None:
+                last_consumer[wiring.from_] = consumer_index
+
     outcomes: list[StageOutcome] = []
     chain: list[ProvenanceEntry] = []
 
-    for instance_name in validated.stage_order:
+    for stage_index, instance_name in enumerate(validated.stage_order):
         stage = validated.stage_instances[instance_name]
         stage_entry = config.stages[instance_name]
         warning_offset = len(stage.warnings)
@@ -168,7 +177,17 @@ def run_work_item(
                 started_at=started_at, finished_at=datetime.now(UTC),
             )
         )
-        outputs[instance_name] = LazyReference.from_value(output, coords=coords)
+        # Retain the output only if a later stage consumes it, and drop every
+        # value whose last consumer just ran (the seed keeps its Meta — the
+        # provenance base — but frees the data).
+        if last_consumer.get(instance_name, -1) > stage_index:
+            outputs[instance_name] = LazyReference.from_value(output, coords=coords)
+        del output, deps
+        for name, consumer_index in last_consumer.items():
+            if consumer_index == stage_index:
+                outputs.pop(name, None)
+                if name == validated.seed_name and "cell" in seed_cache:
+                    seed_cache["cell"] = (None, seed_cache["cell"][1])
 
     oplog.append(
         WorkItemRecord(

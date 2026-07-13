@@ -122,9 +122,10 @@ number come from?"
   never attempted. Re-runs process only the delta.
 - **Operational log** — Rainspout's private record of every attempt
   (succeeded/failed, per stage, per work item). What makes resume work.
-- **Status file** — the live state a running `spout run` publishes next to
-  its log; `spout status --config <run.yml>` reads it from another terminal
-  (current work item, stage status line, progress percentage).
+- **Live status line** — the one line `spout run` redraws in place in its
+  own terminal (items done, current work item, stage status line, progress
+  percentage); on automatically when attached to a terminal, toggled with
+  `--live/--no-live`.
 - **Provenance chain** — the history that travels *with the data*: every
   stage that touched it, with version, settings, and timestamp. What makes
   results traceable.
