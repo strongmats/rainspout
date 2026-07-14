@@ -17,6 +17,7 @@ from rainspout.contracts import (
     StageDependencies,
     StageSettings,
 )
+from rainspout.errors import StageError
 
 
 class ReadingsResources(HandlerResources):
@@ -90,4 +91,27 @@ class ValDetect(Stage):
     dependencies_model = DetectDeps
 
     def run(self, deps):
+        return deps.data.get()
+
+
+class OptionalDepSettings(StageSettings):
+    use_table: bool = False
+
+
+class OptionalDeps(StageDependencies):
+    data: LazyReference
+    # `X | None` — a dependency only some settings read. A config may leave it
+    # unwired, and the stage is handed None.
+    table: Handler | None = None
+
+
+class ValOptional(Stage):
+    name = "val_optional"
+    version = "1.0.0"
+    settings_model = OptionalDepSettings
+    dependencies_model = OptionalDeps
+
+    def run(self, deps):
+        if self.settings.use_table and deps.table is None:
+            raise StageError("val_optional: use_table needs the 'table' dependency wired")
         return deps.data.get()
