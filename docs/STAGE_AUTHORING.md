@@ -289,6 +289,18 @@ The wiring is checked at startup: config wiring a `from:` into a `Handler`
 field (or vice versa), a missing dependency, an extra one, or a misspelled
 name all fail loudly, naming stage and field.
 
+**Optional dependencies.** A dependency that only *some* of your settings read
+is annotated `Handler | None = None` (or `LazyReference | None = None`). The
+config may then leave it unwired, and you are handed `None`. Use this when the
+need for an input is a function of the settings and only your stage can know
+it: a `calibrate` stage reads its `calibration` file when the calibration is
+frequency-dependent, but a static scalar gain needs no file at all — forcing
+every config to wire one would be a lie. Optional means *may be absent*, not
+*anything goes*: when it **is** wired, the wiring kind is checked exactly as
+above, so a `Handler | None` field still rejects `from:`. The stage owns the
+requirement — check for `None` in `run` and raise `StageError` naming the
+setting that needed it. Everything not annotated `| None` stays mandatory.
+
 **How data enters the DAG:** the run config's `seed:` block (CONFIG_AUTHORING
 §6) defines a named seed entry — the handler that feeds the pipeline; the
 driver loads the seed cell for each work item, stamps the coordinate on the

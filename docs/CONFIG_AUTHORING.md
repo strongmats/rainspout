@@ -283,6 +283,12 @@ Rules, all enforced at startup with named offenders:
   symmetry: a handler-wired dependency and a `save:` block use the same
   `handler:` key — both simply name an instance from `handlers:`; direction
   is already told by `dependencies:` vs `save:`.)
+- A dependency the stage declares **optional** (annotated `Handler | None` /
+  `LazyReference | None` — see STAGE_AUTHORING §5) may be omitted: the stage
+  reads it only under some settings and is handed `None` otherwise. If you do
+  wire it, the wiring kind is checked as usual. The stage's docs tell you which
+  settings need it; a stage that needs one and hasn't got it fails at startup
+  or on the work item, naming the setting.
 - Every `from:` must name an existing stage instance in this file — or a seed
   entry (§6). The graph must be acyclic.
 - `settings:` is validated by the stage's own model — unknown keys, missing

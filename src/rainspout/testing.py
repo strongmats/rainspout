@@ -15,6 +15,7 @@ from typing import Any
 from .contracts import Handler, HandlerResources, LazyReference, Meta, Stage
 from .contracts.metadata import ProvenanceEntry
 from .errors import RainspoutError
+from .validation import dependency_annotation
 
 
 class _FakeDataHandler(Handler):
@@ -72,10 +73,15 @@ def run_stage(
     provided = dict(deps or {})
     field_values: dict[str, Any] = {}
     for name, field in stage_cls.dependencies_model.model_fields.items():
+        annotation, optional = dependency_annotation(field.annotation)
         if name not in provided:
+            if optional:
+                continue  # `X | None`: unwired is a legal state, the stage handles it
             raise RainspoutError(f"run_stage: missing a value for dependency '{name}'")
         value = provided.pop(name)
-        annotation = field.annotation
+        if optional and value is None:
+            field_values[name] = None
+            continue
         if annotation is LazyReference:
             if not isinstance(value, LazyReference):
                 value = LazyReference.from_value(value, coords=dict(coords or {}))
@@ -89,7 +95,8 @@ def run_stage(
             field_values[name] = value
         else:
             raise RainspoutError(
-                f"run_stage: dependency '{name}' has unsupported annotation {annotation!r}"
+                f"run_stage: dependency '{name}' has unsupported annotation "
+                f"{field.annotation!r}"
             )
     if provided:
         raise RainspoutError(

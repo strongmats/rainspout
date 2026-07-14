@@ -17,7 +17,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from types import UnionType
+from typing import Any, Union, get_args, get_origin
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -102,6 +103,31 @@ def _check_role_map(
                 ) from exc
 
 
+def dependency_annotation(annotation: Any) -> tuple[Any, bool]:
+    """Unwrap an optional dependency: ``X | None`` -> ``(X, True)``, else ``(X, False)``.
+
+    A dependency that only some settings need — a calibration file read solely by
+    a frequency-dependent calibration, a table consulted in one mode — is declared
+    ``Handler | None = None``. Such a dependency may be omitted from the config,
+    and the stage is handed ``None``. Every other dependency stays mandatory.
+    """
+    if get_origin(annotation) in (Union, UnionType):
+        args = get_args(annotation)
+        non_none = [a for a in args if a is not type(None)]
+        if len(args) == 2 and len(non_none) == 1:
+            return non_none[0], True
+    return annotation, False
+
+
+def optional_dependencies(stage_cls: type[Stage]) -> set[str]:
+    """Names of the stage's dependencies that a config may leave unwired."""
+    return {
+        name
+        for name, field in stage_cls.dependencies_model.model_fields.items()
+        if dependency_annotation(field.annotation)[1]
+    }
+
+
 def _wiring_kind(stage_instance: str, stage_cls: type[Stage], field_name: str) -> str:
     field = stage_cls.dependencies_model.model_fields.get(field_name)
     if field is None:
@@ -110,14 +136,15 @@ def _wiring_kind(stage_instance: str, stage_cls: type[Stage], field_name: str) -
             f"stage '{stage_instance}' wires unknown dependency '{field_name}' "
             f"(declared dependencies: {declared})"
         )
-    annotation = field.annotation
+    annotation, _optional = dependency_annotation(field.annotation)
     if annotation is LazyReference:
         return "from"
     if isinstance(annotation, type) and issubclass(annotation, Handler):
         return "handler"
     raise ConfigError(
         f"stage '{stage_instance}': dependency '{field_name}' is annotated "
-        f"{annotation!r}, which is not a wiring kind (LazyReference or Handler)"
+        f"{field.annotation!r}, which is not a wiring kind (LazyReference or "
+        "Handler, either of which may be made optional as `| None`)"
     )
 
 
@@ -152,7 +179,9 @@ def _validate_stage(
         raise SettingsError(f"stage instance '{instance_name}': {exc}") from exc
 
     declared = set(stage_cls.dependencies_model.model_fields)
-    missing = declared - set(entry.dependencies)
+    # `X | None` dependencies are the stage's business to require or not — it
+    # knows which of its settings actually read them; validation cannot.
+    missing = declared - optional_dependencies(stage_cls) - set(entry.dependencies)
     if missing:
         raise ConfigError(f"stage '{instance_name}' is missing dependencies: {sorted(missing)}")
 

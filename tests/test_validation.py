@@ -318,3 +318,44 @@ def test_branching_rejected_in_v1(tmp_path):
     }
     with pytest.raises(ConfigError, match="not supported in v1"):
         validate(tmp_path, cfg)
+
+
+# --- optional dependencies (`X | None`) ---------------------------------------
+
+
+def _optional_cfg(wire_table: bool):
+    """A config using val_optional, with the `table` dependency wired or not."""
+    cfg = base()
+    deps = {"data": {"from": "raw"}}
+    if wire_table:
+        deps["table"] = {"handler": "out"}
+    cfg["stages"] = {
+        "opt": {"stage": "val_optional", "dependencies": deps, "settings": {}},
+    }
+    return cfg
+
+
+def test_optional_dependency_may_be_left_unwired(tmp_path):
+    """The whole point: `table: Handler | None` is the stage's business to
+    require or not, so validation must not insist on it."""
+    validate(tmp_path, _optional_cfg(wire_table=False))
+
+
+def test_optional_dependency_may_also_be_wired(tmp_path):
+    validate(tmp_path, _optional_cfg(wire_table=True))
+
+
+def test_optional_dependency_still_type_checks_its_wiring(tmp_path):
+    """Optional means 'may be absent', not 'anything goes'. A Handler-annotated
+    dependency wired with `from:` is still an error."""
+    cfg = _optional_cfg(wire_table=True)
+    cfg["stages"]["opt"]["dependencies"]["table"] = {"from": "raw"}
+    with pytest.raises(ConfigError, match="must be wired with 'handler:'"):
+        validate(tmp_path, cfg)
+
+
+def test_required_dependency_is_still_required(tmp_path):
+    cfg = _optional_cfg(wire_table=False)
+    cfg["stages"]["opt"]["dependencies"] = {}
+    with pytest.raises(ConfigError, match="missing dependencies.*data"):
+        validate(tmp_path, cfg)
