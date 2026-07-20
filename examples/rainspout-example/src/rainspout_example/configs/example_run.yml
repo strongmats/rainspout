@@ -1,0 +1,47 @@
+# Tutorial 3's run, ready to use. Generate input first:
+#   spout rainspout_example make-data --base-dir ./data/raw
+# then, from the directory holding ./data:
+#   spout run --config <path-to-this-file>
+run:
+  name: example_smooth
+  mode: retrograde
+
+dimensions:
+  day:
+    start: 2026-01-01
+    stop: 2026-01-03
+    step: 1d
+  sensor: [s1, s2]
+
+iteration:
+  order: [day, sensor]
+
+seed:
+  raw:                             # this run's one seed entry —
+    handler: readings_local_csv    #   wired below as `from: raw`
+    resources:
+      base_dir: ./data/raw
+    dimensions:                    # role: your-dimension — must match
+      day: day                     #   the iterated set EXACTLY
+      sensor: sensor
+
+handlers:
+  smoothed_out:
+    handler: readings_local_csv
+    resources:
+      base_dir: ./data/smoothed
+    dimensions:                    # save target: the driver writes each work
+      day: day                     #   item's output here, so it needs this map
+      sensor: sensor
+
+stages:
+  smooth:
+    stage: smooth_readings
+    dependencies:
+      data:
+        from: raw                  # the seed cell, coordinate already stamped
+    settings:
+      window_len: 3
+      method: mean
+    save:
+      handler: smoothed_out

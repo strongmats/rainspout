@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rainspout"
-version = "1.3.1"
+version = "1.4.0"
 description = "A domain-agnostic frame for building scientific data-processing pipelines"
 readme = "README.md"
 license = "MIT"
@@ -49,14 +49,18 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/rainspout"]
 
-# The sdist ships exactly this and nothing else. Without an explicit list,
-# hatchling sweeps every non-gitignored file in the tree — which silently
-# publishes whatever a working branch happens to be carrying. 1.3.0 was cut
-# from a line that tracked internal notes and shipped them to PyPI; the wheel
-# was clean only because `packages` above happens to pin it. State the sdist's
-# contents rather than inheriting them from the checkout.
+# The sdist ships exactly this and nothing else. Without it, hatchling sweeps
+# every non-gitignored file in the tree — on this branch that means
+# claude_interactions/ and examples/ ride along. The wheel is unaffected because
+# `packages` above pins it.
+#
+# This must be `only-include`, not `include`. Hatchling's `include` is additive
+# to the default VCS-based file selection, so it does not exclude anything; it
+# reads like a restriction but is a no-op here. `only-include` is the one that
+# actually narrows the set. Verify with `uv build --sdist` and inspect the
+# tarball after touching this list.
 [tool.hatch.build.targets.sdist]
-include = [
+only-include = [
     "src/rainspout",
     "tests",
     "docs",
