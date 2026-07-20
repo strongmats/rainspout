@@ -87,9 +87,19 @@ in its own terminal; see `--live/--no-live`.)
 
 - **retrograde** — compute the work delta once and drain it, then exit.
 - **realtime** — drain the delta, sleep `poll_frequency` seconds, recompute,
-  forever until stopped. Polling never overlaps a run in progress. A clean stop
-  (Ctrl-C / SIGTERM between work items) finishes the current work item, flushes
-  the log, and exits 0.
+  forever until stopped. Polling never overlaps a run in progress.
+
+Two ways to stop, and they differ on purpose:
+
+- **SIGTERM** (`kill`, schedulers) — the clean stop. Finishes the current work
+  item, flushes the log, exits 0 with `(stopped cleanly)`.
+- **Ctrl-C** (SIGINT, interactive) — abandons the in-flight work item and
+  returns to the prompt immediately, exiting 130. Waiting for the boundary can
+  take as long as one work item, which reads as a hang. Nothing is lost: the
+  log is appended per work item, so everything finished is already recorded,
+  and the abandoned item was never marked done — a rerun redoes just that one.
+  A second Ctrl-C terminates at the OS level, which is the only thing that can
+  interrupt a long call inside a C extension.
 
 The **delta** is `exists − attempted`: what the seed handler's `catalog`
 reports minus every work item already in the operational log — *success or

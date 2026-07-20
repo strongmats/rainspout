@@ -118,3 +118,66 @@ def test_validate_failure_exits_nonzero(tmp_path):
     assert result.exit_code == 1
     assert "validation failed" in result.output
     assert "window_len" in result.output
+
+
+def _valid_config(tmp_path):
+    """write_config's default maps the sensor role onto a date dimension, which
+    does not coerce; give both roles their own string-valued axis."""
+    def fix(cfg):
+        cfg["dimensions"] = {"day": [date(2026, 1, 1)], "sensor": ["s1"]}
+        cfg["iteration"] = {"order": ["day", "sensor"]}
+        cfg["seed"]["raw"]["dimensions"] = {"day": "day", "sensor": "sensor"}
+
+    return write_config(tmp_path, fix)
+
+
+def test_sigint_aborts_the_in_flight_item(tmp_path, monkeypatch):
+    """Ctrl-C must return to the prompt now, not at the next item boundary.
+
+    The graceful stop only lands between work items, so on a long item a
+    caught SIGINT reads as a hang. `run` therefore installs a handler that
+    raises, and reports the abandonment rather than a clean stop.
+    """
+    import signal
+
+    import rainspout.cli.main as cli
+
+    seen = {}
+
+    def fake_drive(*_args, **_kwargs):
+        # stand where a long work item stands: the handler is installed, and
+        # the signal arrives mid-item. Invoke it exactly as the OS would.
+        handler = signal.getsignal(signal.SIGINT)
+        seen["handler_is_a_bare_latch"] = handler is _kwargs["stop"].set
+        handler(signal.SIGINT, None)  # must raise
+        raise AssertionError("SIGINT handler returned instead of raising")
+
+    monkeypatch.setattr(cli, "drive", fake_drive)
+    result = runner.invoke(app, ["run", "--config", str(_valid_config(tmp_path))])
+
+    assert seen["handler_is_a_bare_latch"] is False, "SIGINT must not merely set the flag"
+    assert result.exit_code == 130, result.output
+    assert "interrupted" in result.output
+    assert "rerun to resume" in result.output
+    # a second Ctrl-C must reach the OS, the only thing that can interrupt a
+    # long call inside a C extension
+    assert signal.getsignal(signal.SIGINT) is signal.SIG_DFL
+
+
+def test_sigterm_keeps_the_graceful_contract(tmp_path, monkeypatch):
+    """`kill` and schedulers expect a clean boundary stop, not an abandoned item."""
+    import signal
+
+    import rainspout.cli.main as cli
+
+    captured = {}
+
+    def fake_drive(*_args, **kwargs):
+        captured["handler"] = signal.getsignal(signal.SIGTERM)
+        captured["stop_set"] = kwargs["stop"].set
+        raise KeyboardInterrupt  # unwind without running a real DAG
+
+    monkeypatch.setattr(cli, "drive", fake_drive)
+    runner.invoke(app, ["run", "--config", str(_valid_config(tmp_path))])
+
+    assert captured["handler"] == captured["stop_set"]

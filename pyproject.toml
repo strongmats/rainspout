@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rainspout"
-version = "1.3.1"
+version = "1.4.0"
 description = "A domain-agnostic frame for building scientific data-processing pipelines"
 readme = "README.md"
 license = "MIT"

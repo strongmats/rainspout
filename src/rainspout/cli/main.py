@@ -141,7 +141,30 @@ def run(
                 reporter = LiveStatus(sys.stderr)
 
         stop = StopFlag()
-        signal.signal(signal.SIGINT, stop.set)
+
+        def interrupt(signum: int, frame: Any) -> None:
+            """Ctrl-C aborts now; a second one is an OS-level kill.
+
+            The graceful stop only lands between work items, so on a long item
+            a caught SIGINT looks like a hang — the keypress registers and
+            nothing happens for minutes. Interactive Ctrl-C therefore abandons
+            the in-flight item instead of finishing it. That is safe: the oplog
+            is appended per work item, so everything already finished is on
+            disk, and the interrupted item was never marked done, so a rerun
+            redoes just that one. The flock is released by the OS on exit.
+
+            Restoring the default handler first means a second Ctrl-C
+            terminates at the OS level, which is the only thing that can
+            interrupt a long call inside a C extension — where Python cannot
+            run this handler at all until the call returns.
+            """
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            stop.set()
+            raise KeyboardInterrupt
+
+        signal.signal(signal.SIGINT, interrupt)
+        # SIGTERM keeps the graceful contract: schedulers and `kill` expect a
+        # clean stop at the next work-item boundary, not an abandoned item.
         signal.signal(signal.SIGTERM, stop.set)
 
         def notify(kind: str, payload: Any) -> None:
@@ -168,6 +191,11 @@ def run(
                 release_lock()
             if reporter is not None:
                 reporter.clear()
+    except KeyboardInterrupt:
+        # the finally above already released the lock and cleared the live line
+        typer.echo("\ninterrupted — the in-flight work item was abandoned.", err=True)
+        typer.echo("Everything already finished is recorded; rerun to resume.", err=True)
+        raise typer.Exit(code=130) from None
     except RainspoutError as exc:
         typer.echo(f"run failed to start: {exc}", err=True)
         raise typer.Exit(code=1) from exc
